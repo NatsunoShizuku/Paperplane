@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from paperplane.client import Throttle
 from paperplane.config import ChannelConfig, Config, ConfigError, MatchRule, load_config, load_raw_config, save_raw_config
 from paperplane.core import ChannelJob, derive_search_queries, include_folder_name, render_folder
-from paperplane.gui import build_gui_app
+from paperplane.gui import _load_dark_mode, _save_dark_mode, build_gui_app
 from paperplane.matcher import Matcher
 from paperplane.service import LongRunningRunner, filter_channels_by_scope
 from paperplane.store import CachedMessage, Store
@@ -339,3 +339,17 @@ def test_filter_channels_by_scope():
 
     # scope=None 保留全部
     assert len(filter_channels_by_scope([ch0, ch1, ch2], None)) == 3
+
+
+def test_gui_dark_mode_persistence(tmp_path: Path):
+    cfg_file = tmp_path / "config.toml"
+    save_raw_config(cfg_file, {
+        "telegram": {"api_id": 1, "api_hash": "abc"},
+        "download": {"data_dir": "data"},
+        "channels": [{"chat": -1001}],
+    })
+    assert _load_dark_mode(cfg_file) is False
+    _save_dark_mode(cfg_file, True)
+    assert _load_dark_mode(cfg_file) is True
+    _save_dark_mode(cfg_file, False)
+    assert _load_dark_mode(cfg_file) is False

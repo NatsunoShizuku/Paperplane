@@ -1,6 +1,7 @@
 """现代化 Material Design 3 风格 GUI（基于 NiceGUI / Quasar），支持 Windows / macOS 双端长期挂机。"""
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime
@@ -205,17 +206,45 @@ def _initial_char(name: str) -> str:
     return s[0].upper() if s else "?"
 
 
-def _avatar_file_for(cfg_path: Path, chat_id: int | None) -> Path | None:
-    if chat_id is None:
-        return None
+def _data_dir_for(cfg_path: Path) -> Path:
     try:
         raw = load_raw_config(cfg_path) if cfg_path.exists() else {}
     except ConfigError:
         raw = {}
     dl = raw.get("download", {})
-    data_dir = (cfg_path.parent / dl.get("data_dir", "data")).resolve()
-    p = data_dir / "avatars" / f"{chat_id}.jpg"
+    return (cfg_path.parent / dl.get("data_dir", "data")).resolve()
+
+
+def _avatar_file_for(cfg_path: Path, chat_id: int | None) -> Path | None:
+    if chat_id is None:
+        return None
+    p = _data_dir_for(cfg_path) / "avatars" / f"{chat_id}.jpg"
     return p if p.exists() else None
+
+
+def _load_dark_mode(cfg_path: Path) -> bool:
+    prefs_file = _data_dir_for(cfg_path) / "ui_prefs.json"
+    if not prefs_file.exists():
+        return False
+    try:
+        data = json.loads(prefs_file.read_text(encoding="utf-8"))
+        return bool(data.get("dark_mode", False))
+    except Exception:
+        return False
+
+
+def _save_dark_mode(cfg_path: Path, enabled: bool) -> None:
+    data_dir = _data_dir_for(cfg_path)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    prefs_file = data_dir / "ui_prefs.json"
+    data = {}
+    if prefs_file.exists():
+        try:
+            data = json.loads(prefs_file.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    data["dark_mode"] = bool(enabled)
+    prefs_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def build_gui_app(config_path: str | Path):
@@ -272,7 +301,8 @@ def build_gui_app(config_path: str | Path):
             info="#3B82F6",
         )
         ui.add_head_html(M3_HEAD_CSS)
-        dark = ui.dark_mode(value=False)
+        saved_dark = _load_dark_mode(cfg_path)
+        dark = ui.dark_mode(value=saved_dark)
 
         nav_buttons: dict[str, ui.button] = {}
         pages: dict[str, ui.column] = {}
@@ -298,10 +328,11 @@ def build_gui_app(config_path: str | Path):
 
             with ui.row().classes("items-center gap-3"):
                 header_chip = ui.chip("空闲待命", icon="pause_circle", color="grey-6", text_color="white").props("dense")
-                dark_btn = ui.button(icon="dark_mode").props("flat round dense")
+                dark_btn = ui.button(icon="light_mode" if saved_dark else "dark_mode").props("flat round dense")
 
                 def toggle_dark():
                     dark.toggle()
+                    _save_dark_mode(cfg_path, bool(dark.value))
                     dark_btn.props(f"icon={'light_mode' if dark.value else 'dark_mode'}")
 
                 dark_btn.on_click(toggle_dark)
