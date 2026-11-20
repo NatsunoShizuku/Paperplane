@@ -2,11 +2,19 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 if not exist ".venv-win\Scripts\python.exe" (
-    echo [Paperplane] .venv-win not found. Please run:
-    echo   py -3.12 -m venv .venv-win
-    echo   .\.venv-win\Scripts\python.exe -m pip install -r requirements.txt
-    pause
-    exit /b 1
+    echo [Paperplane] First run: creating .venv-win and installing dependencies...
+    where py >nul 2>nul && (py -3.12 -m venv .venv-win 2>nul || py -m venv .venv-win) || python -m venv .venv-win
+    if not exist ".venv-win\Scripts\python.exe" (
+        echo [Paperplane] Failed to create .venv-win. Please install Python 3.11+ first.
+        pause
+        exit /b 1
+    )
+    ".venv-win\Scripts\python.exe" -m pip install --no-cache-dir -r requirements.txt
+    if errorlevel 1 (
+        echo [Paperplane] Dependency installation failed.
+        pause
+        exit /b 1
+    )
 )
 ".venv-win\Scripts\python.exe" -m paperplane ui %*
 pause

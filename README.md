@@ -2,7 +2,73 @@
 
 **English** | [简体中文](README-zh.md)
 
-A cross-platform (Windows / macOS) **Telegram channel keyword media downloader** built with Python and [Telethon](https://github.com/LonamiWebs/Telethon), featuring a **Material Design 3 Web GUI**, an **interactive CLI**, and resilient 24/7 unattended watching.
+A cross-platform (Windows / macOS) **Telegram channel keyword media downloader** built with Python and [Telethon](https://github.com/LonamiWebs/Telethon), featuring a **Web GUI**, an **interactive CLI**, and resilient 24/7 unattended watching.
+
+---
+
+## Step-by-Step Guide
+
+### Option A: Launch GUI via `.bat` Script (Windows Recommended)
+
+1. **Install Python 3.11+** (Python 3.12 recommended) with *Add Python to PATH* checked.
+2. **Obtain Telegram API credentials**: visit [my.telegram.org](https://my.telegram.org) → *API development tools* and note your `api_id` and `api_hash`.
+3. **Double-click [`run-gui.bat`](run-gui.bat)** in the project root:
+   - On first run, it automatically creates `.venv-win`, installs dependencies from `requirements.txt`, and opens the Material 3 GUI in your browser at `http://127.0.0.1:8765`.
+4. **Configure & log in inside the GUI**:
+   - Open **Config Center** in the left drawer, fill in `api_id`, `api_hash`, and proxy (if needed), then click **Save** (or edit [`config.toml`](config.toml) directly).
+   - Open **Account & Login**, enter your phone number to receive a verification code, and sign in (one-time).
+   - Open **Channels & Preview**, click **Fetch Dialogs & Avatars** to add channels in one click, then configure keywords and media types in **Config Center**.
+5. **Start watching / downloading**:
+   - Go to **Dashboard**, check the channels and keywords you want for this run, and click **Start Long-Running Watch** (or **Download Once**). Closing the browser tab keeps background downloads running.
+
+---
+
+### Option B: Launch via CLI (Windows & macOS)
+
+1. **Set up the virtual environment and install dependencies** (Python 3.11+ required):
+   - **Windows (PowerShell)**:
+     ```powershell
+     py -3.12 -m venv .venv-win
+     .\.venv-win\Scripts\python.exe -m pip install --no-cache-dir -r requirements.txt
+     ```
+     *(You can also double-click [`run-cli.bat`](run-cli.bat) to auto-bootstrap `.venv-win` and open the interactive CLI menu.)*
+   - **macOS**:
+     ```bash
+     python3 -m venv .venv
+     ./.venv/bin/pip install -r requirements.txt
+     ```
+2. **Edit the configuration**: edit [`config.toml`](config.toml) directly (it includes detailed inline comments) to set `api_id`, `api_hash`, proxy (optional), and channels—or run the interactive setup wizard:
+   ```powershell
+   # Windows
+   .\.venv-win\Scripts\python.exe -m paperplane init
+   # macOS
+   ./.venv/bin/python -m paperplane init
+   ```
+3. **Log in to Telegram (one-time)**:
+   ```powershell
+   # Windows
+   .\.venv-win\Scripts\python.exe -m paperplane login
+   # macOS
+   ./.venv/bin/python -m paperplane login
+   ```
+4. **Pick channels and start downloading / watching**:
+   - Launch the interactive CLI menu (arrow-key navigation, channel picker, offline preview, live progress bars, and watch mode):
+     ```powershell
+     # Windows
+     .\.venv-win\Scripts\python.exe -m paperplane ui
+     # macOS
+     ./.venv/bin/python -m paperplane ui
+     ```
+   - Or run classic subcommands directly:
+     ```bash
+     python -m paperplane chats      # List dialogs and numeric IDs for config.toml
+     python -m paperplane scan       # Scan and cache messages into SQLite
+     python -m paperplane match      # Offline preview of matched files (zero API calls)
+     python -m paperplane download   # Concurrent one-shot download
+     python -m paperplane watch      # Catch up history + 24/7 watch mode
+     ```
+
+> **Cross-platform note**: Keep separate virtual environments when sharing the project folder between macOS (`.venv`) and Windows (`.venv-win`). The SQLite files in `data/` are cross-platform, but **never run the same session file on two machines simultaneously**.
 
 ---
 
@@ -21,74 +87,12 @@ A cross-platform (Windows / macOS) **Telegram channel keyword media downloader**
   - Global cross-channel concurrency limit (shared `Semaphore`) + producer-consumer worker queue to avoid slow-file head-of-line blocking.
   - Request throttling with jitter, automatic `FloodWait` sleeping & max-wait circuit breaker, periodic `file_reference` refresh, and 512KB chunk-aligned resumable downloads.
   - `watch` mode features exponential-backoff auto-reconnect and periodic catch-up scans.
-- **Three Interfaces**:
-  - **Material 3 Web GUI** (NiceGUI): Persistent dark/light mode, cached channel avatars, dashboard-level channel & keyword scope checkboxes, live download queue & log terminal (closing the browser tab keeps background downloads running).
-  - **Interactive CLI** (Rich + Questionary): Arrow-key menu, interactive config wizard, channel picker, and live progress bars.
-  - **Classic CLI**: Script-friendly subcommands for headless servers.
+- **Modern Material 3 GUI**: Persistent dark/light mode, cached channel avatars, dashboard channel & keyword scope checkboxes, live download queue, and log terminal.
 
 ---
 
-## Requirements
+## Common CLI Options
 
-- Python **3.11+** (Python 3.12 recommended)
-- Telegram API credentials: `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org) → *API development tools*
-
----
-
-## Quick Start
-
-### Windows
-
-```powershell
-# 1. Create a Windows virtual environment and install dependencies
-py -3.12 -m venv .venv-win
-.\.venv-win\Scripts\python.exe -m pip install -r requirements.txt
-
-# 2. Copy the example config and edit it (or use the GUI / init wizard)
-Copy-Item config.example.toml config.toml
-
-# 3. Launch the GUI or interactive CLI (or double-click run-gui.bat / run-cli.bat)
-.\.venv-win\Scripts\python.exe -m paperplane gui
-# or
-.\.venv-win\Scripts\python.exe -m paperplane ui
-```
-
-### macOS
-
-```bash
-# 1. Create a virtual environment and install dependencies
-python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
-
-# 2. Copy the example config and edit it
-cp config.example.toml config.toml
-
-# 3. Launch the GUI or interactive CLI
-./.venv/bin/python -m paperplane gui
-# or
-./.venv/bin/python -m paperplane ui
-```
-
-> If you share the same project directory across macOS and Windows, keep separate virtual environments (`.venv` for macOS, `.venv-win` for Windows). The `data/` SQLite files (`paperplane.session`, `state.sqlite3`) are cross-platform, but **never run the same session file on two machines simultaneously**.
-
----
-
-## CLI Commands
-
-```bash
-python -m paperplane              # Launch the interactive CLI menu (same as `ui`)
-python -m paperplane gui          # Launch the Material 3 Web GUI (default http://127.0.0.1:8765)
-python -m paperplane init         # Interactive setup wizard for config.toml
-python -m paperplane pick         # Fetch dialogs and interactively pick channels
-python -m paperplane login        # Interactive Telegram login (one-time)
-python -m paperplane chats        # List dialogs and numeric chat IDs
-python -m paperplane scan         # Scan and cache messages into SQLite
-python -m paperplane match        # Offline preview of matched files (zero API requests)
-python -m paperplane download     # Scan + match + download concurrently
-python -m paperplane watch        # Catch up history + long-running watch (auto-reconnect + catch-up)
-```
-
-Common options:
 - `-c, --config <path>`: Path to config file (default `config.toml`)
 - `-v, --verbose`: Enable debug logging
 - `--host 0.0.0.0 --port 8765`: Bind GUI to a custom host/port (e.g., LAN access)
@@ -96,50 +100,9 @@ Common options:
 
 ---
 
-## Configuration (`config.toml`)
+## Configuration ([`config.toml`](config.toml))
 
-See [`config.example.toml`](config.example.toml) for a full template. Setting `TG_API_ID` and `TG_API_HASH` as environment variables is recommended over hardcoding them.
-
-```toml
-[telegram]
-# api_id = 123456
-# api_hash = "your_api_hash"
-
-[download]
-dir = "downloads"
-data_dir = "data"
-concurrency = 3
-path_template = "{include}/{media_type}"   # Available: {include} {media_type} {channel} {date} {month} {year}
-
-[limits]
-request_interval = 1.0
-request_jitter = 0.5
-flood_sleep_threshold = 120
-max_flood_wait = 3600
-max_retries = 3
-
-[proxy]
-type = "socks5"                            # socks5 / http / mtproxy
-host = "127.0.0.1"
-port = 7890
-
-[[channels]]
-chat = -1001234567890                      # Numeric ID or "@username"
-exclude = ["trailer"]
-min_size = "10MB"
-max_size = 0                               # 0 = unlimited
-context_before = 1                         # Include N preceding text-only messages in matching
-follow_replies = true
-since = 2026-01-01                         # Optional start date
-scan_mode = "search"                       # "full" (traversal) or "search" (server-side search)
-# Per-channel rules mapping different include regexes to different media types:
-rules = [
-  { include = ["#4K Video"], media = ["video"] },
-  { include = ["#Gallery"], media = ["photo", "document"] },
-]
-```
-
-> **Note**: In TOML, `api_hash`, IP addresses (e.g. `"127.0.0.1"`), paths, and keyword entries must be quoted strings. Using `paperplane init` or the GUI Config Center avoids TOML syntax errors automatically.
+The repository includes a fully commented [`config.toml`](config.toml) ready to edit directly. Providing `TG_API_ID` and `TG_API_HASH` via environment variables is recommended; if you place real credentials into `config.toml`, run `git update-index --skip-worktree config.toml` before committing so your secrets are never pushed.
 
 ---
 
@@ -171,11 +134,11 @@ Paperplane/
 │   ├── cli_ui.py          # Rich + Questionary interactive CLI
 │   └── gui.py             # Material Design 3 NiceGUI web interface
 ├── tests/                 # Unit tests (matcher / store / watch / concurrency / rules)
-├── config.example.toml    # Example configuration
+├── config.toml            # Detailed commented configuration file (edit directly)
 ├── pyproject.toml         # Package metadata & console scripts
 ├── requirements.txt       # Dependencies
-├── run-cli.bat            # Windows launcher for interactive CLI
-└── run-gui.bat            # Windows launcher for GUI
+├── run-cli.bat            # Windows launcher for interactive CLI (auto-bootstraps venv)
+└── run-gui.bat            # Windows launcher for GUI (auto-bootstraps venv)
 ```
 
 ---
