@@ -8,12 +8,14 @@
 
 ## 步骤教程
 
-### 方式一：使用 GUI `.bat` 文件启动（Windows 推荐，零命令行操作）
+### 方式一：使用一键启动脚本启动 GUI（推荐，零命令行操作）
 
-1. **安装 Python 3.11+**（推荐 Python 3.12），安装时勾选 *Add Python to PATH*。
+1. **安装 Python 3.11+**（推荐 Python 3.12），Windows 安装时勾选 *Add Python to PATH*。
 2. **获取 Telegram API 凭证**：前往 [my.telegram.org](https://my.telegram.org) → *API development tools*，申请并记下 `api_id` 和 `api_hash`。
-3. **直接双击根目录下的 [`run-gui.bat`](run-gui.bat)**：
-   - 首次运行会自动创建 `.venv-win` 虚拟环境并安装 `requirements.txt` 中的依赖，完成后自动在浏览器打开 `http://127.0.0.1:8765`。
+3. **直接双击对应系统的启动文件**：
+   - **Windows**：双击 [`run-gui.bat`](run-gui.bat)
+   - **macOS**：双击 [`run-gui.command`](run-gui.command)（若系统提示未受信任，右键 → 打开即可）
+   - 首次运行会自动创建虚拟环境（`.venv-win` / `.venv`）并安装 `requirements.txt` 依赖，完成后自动在浏览器打开 `http://127.0.0.1:8765`。
 4. **在界面中完成配置与登录**：
    - 打开左侧 **「配置中心」**，填写 `api_id`、`api_hash` 和代理（如需），点击 **「保存全部配置」**（也可直接编辑项目根目录自带的 [`config.toml`](config.toml)）。
    - 打开左侧 **「账号与登录」**，输入手机号获取验证码并完成登录（仅需一次）。
@@ -37,6 +39,7 @@
      python3 -m venv .venv
      ./.venv/bin/pip install -r requirements.txt
      ```
+     *(也可以直接双击 [`run-cli.command`](run-cli.command) 自动完成虚拟环境创建、依赖安装并进入交互式菜单。)*
 2. **修改配置文件**：直接编辑项目根目录的 [`config.toml`](config.toml)（内含详尽中文注释），填写 `api_id`、`api_hash`、代理（按需）和频道配置；或运行交互式向导自动生成：
    ```powershell
    # Windows
@@ -138,7 +141,9 @@ Paperplane/
 ├── pyproject.toml         # 项目打包与脚本入口定义
 ├── requirements.txt       # 依赖列表
 ├── run-cli.bat            # Windows 交互式 CLI 一键启动脚本（自动建环境）
-└── run-gui.bat            # Windows GUI 一键启动脚本（自动建环境）
+├── run-gui.bat            # Windows GUI 一键启动脚本（自动建环境）
+├── run-cli.command        # macOS 交互式 CLI 一键启动脚本（自动建环境）
+└── run-gui.command        # macOS GUI 一键启动脚本（自动建环境）
 ```
 
 ---

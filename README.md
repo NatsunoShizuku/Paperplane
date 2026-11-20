@@ -8,12 +8,14 @@ A cross-platform (Windows / macOS) **Telegram channel keyword media downloader**
 
 ## Step-by-Step Guide
 
-### Option A: Launch GUI via `.bat` Script (Windows Recommended)
+### Option A: One-Click GUI Launcher (Recommended, Zero CLI Needed)
 
-1. **Install Python 3.11+** (Python 3.12 recommended) with *Add Python to PATH* checked.
+1. **Install Python 3.11+** (Python 3.12 recommended); on Windows, check *Add Python to PATH*.
 2. **Obtain Telegram API credentials**: visit [my.telegram.org](https://my.telegram.org) → *API development tools* and note your `api_id` and `api_hash`.
-3. **Double-click [`run-gui.bat`](run-gui.bat)** in the project root:
-   - On first run, it automatically creates `.venv-win`, installs dependencies from `requirements.txt`, and opens the Material 3 GUI in your browser at `http://127.0.0.1:8765`.
+3. **Double-click the launcher for your OS**:
+   - **Windows**: double-click [`run-gui.bat`](run-gui.bat)
+   - **macOS**: double-click [`run-gui.command`](run-gui.command) (if Gatekeeper warns on first run, right-click → Open)
+   - On first run, it automatically creates the virtual environment (`.venv-win` / `.venv`), installs dependencies from `requirements.txt`, and opens the Material 3 GUI in your browser at `http://127.0.0.1:8765`.
 4. **Configure & log in inside the GUI**:
    - Open **Config Center** in the left drawer, fill in `api_id`, `api_hash`, and proxy (if needed), then click **Save** (or edit [`config.toml`](config.toml) directly).
    - Open **Account & Login**, enter your phone number to receive a verification code, and sign in (one-time).
@@ -37,6 +39,7 @@ A cross-platform (Windows / macOS) **Telegram channel keyword media downloader**
      python3 -m venv .venv
      ./.venv/bin/pip install -r requirements.txt
      ```
+     *(You can also double-click [`run-cli.command`](run-cli.command) to auto-bootstrap `.venv` and open the interactive CLI menu.)*
 2. **Edit the configuration**: edit [`config.toml`](config.toml) directly (it includes detailed inline comments) to set `api_id`, `api_hash`, proxy (optional), and channels—or run the interactive setup wizard:
    ```powershell
    # Windows
@@ -138,7 +141,9 @@ Paperplane/
 ├── pyproject.toml         # Package metadata & console scripts
 ├── requirements.txt       # Dependencies
 ├── run-cli.bat            # Windows launcher for interactive CLI (auto-bootstraps venv)
-└── run-gui.bat            # Windows launcher for GUI (auto-bootstraps venv)
+├── run-gui.bat            # Windows launcher for GUI (auto-bootstraps venv)
+├── run-cli.command        # macOS launcher for interactive CLI (auto-bootstraps venv)
+└── run-gui.command        # macOS launcher for GUI (auto-bootstraps venv)
 ```
 
 ---
