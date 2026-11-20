@@ -2,6 +2,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+if [ -x "runtime/bin/python3" ]; then
+    export PYTHONNOUSERSITE=1
+    echo "[Paperplane] Starting GUI (offline runtime) at http://127.0.0.1:8765 ..."
+    exec ./runtime/bin/python3 -m paperplane gui "$@"
+fi
+
 if [ ! -x ".venv/bin/python" ]; then
     echo "[Paperplane] First run: creating .venv and installing dependencies..."
     PY_BIN=""

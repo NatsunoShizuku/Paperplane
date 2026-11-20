@@ -2,6 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+if [ -x "runtime/bin/python3" ]; then
+    export PYTHONNOUSERSITE=1
+    exec ./runtime/bin/python3 -m paperplane ui "$@"
+fi
+
 if [ ! -x ".venv/bin/python" ]; then
     echo "[Paperplane] First run: creating .venv and installing dependencies..."
     PY_BIN=""

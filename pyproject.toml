@@ -14,9 +14,9 @@ dependencies = [
 
 [project.optional-dependencies]
 fast = ["cryptg>=0.4"]
-cli = ["rich>=13.7", "questionary>=2.0", "tomli-w>=1.0"]
-gui = ["nicegui>=2.0", "tomli-w>=1.0"]
-all = ["cryptg>=0.4", "rich>=13.7", "questionary>=2.0", "tomli-w>=1.0", "nicegui>=2.0"]
+cli = ["rich>=13.7", "questionary>=2.0", "tomlkit>=0.13"]
+gui = ["nicegui>=2.0", "tomlkit>=0.13"]
+all = ["cryptg>=0.4", "rich>=13.7", "questionary>=2.0", "tomlkit>=0.13", "nicegui>=2.0"]
 
 [project.scripts]
 paperplane = "paperplane.__main__:main"

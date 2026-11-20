@@ -1,6 +1,7 @@
 # === 敏感凭证、环境变量与 Telegram Session / Token 缓存 ===
 .env
 .env.*
+config.toml
 config.local.toml
 *.session
 *.session-journal

@@ -8,7 +8,22 @@
 
 ## 步骤教程
 
-### 方式一：使用一键启动脚本启动 GUI（推荐，零命令行操作）
+### 方式零：下载 Release 离线零配置版（最省心，免装 Python）
+
+1. 前往仓库 **Releases** 页面，下载对应系统的离线包：
+   - **Windows (64位)**：`Paperplane-*-windows-x64.zip`
+   - **macOS (Apple Silicon M1–M4)**：`Paperplane-*-macos-arm64.tar.gz`
+   - **macOS (Intel)**：`Paperplane-*-macos-x64.tar.gz`
+2. 解压后**直接双击启动**（内置独立 Python 3.12 运行时与全部依赖，无需安装 Python，也不需要联网装包）：
+   - **Windows**：双击 `run-gui.bat`（或 `run-cli.bat`）
+   - **macOS**：双击 `run-gui.command`（或 `run-cli.command`）。若首次被 Gatekeeper 拦截，在解压目录执行一次 `xattr -dr com.apple.quarantine .` 后再次双击即可。
+3. 随后直接进入 GUI 的 **「配置中心」→「账号与登录」→「频道与预览」→「挂机控制台」** 即可使用。
+
+> 如需自行本地构建当前平台的离线包，可运行 `python3 scripts/build_release.py --run-tests`（产物生成在 `dist/`，不会污染 `main` 源码）。
+
+---
+
+### 方式一：从源码使用一键启动脚本启动 GUI（零命令行操作）
 
 1. **安装 Python 3.11+**（推荐 Python 3.12），Windows 安装时勾选 *Add Python to PATH*。
 2. **获取 Telegram API 凭证**：前往 [my.telegram.org](https://my.telegram.org) → *API development tools*，申请并记下 `api_id` 和 `api_hash`。
@@ -103,9 +118,12 @@
 
 ---
 
-## 配置说明（[`config.toml`](config.toml)）
+## 配置说明（[`config.example.toml`](config.example.toml)）
 
-项目根目录已内置带详细注释的 [`config.toml`](config.toml)，直接修改即可。敏感信息推荐通过环境变量 `TG_API_ID` 与 `TG_API_HASH` 提供；若直接写入 `config.toml` 且需要推送代码，请执行 `git update-index --skip-worktree config.toml` 防止凭证泄露。
+项目根目录内置带详细注释的模板 [`config.example.toml`](config.example.toml)；首次启动 CLI 或 GUI 时会自动复制生成 `config.toml`（`config.toml` 与 `config.local.toml` 均已在 `.gitignore` 中，无需担心误提交个人凭证）。
+- 支持 `[channel_defaults]` 频道默认继承（`[[channels]]` 只需填写差异字段）与单频道 `enabled = true/false` 启停。
+- 支持同级 `config.local.toml` 覆盖层与环境变量 `TG_API_ID` / `TG_API_HASH`。
+- 通过 GUI 或向导保存配置时使用 `tomlkit` 原地更新，自动保留原文件注释与排版。
 
 ---
 
@@ -135,9 +153,11 @@ Paperplane/
 │   ├── core.py            # 扫描/搜索、Worker 队列下载与断点续传
 │   ├── service.py         # 供 CLI 与 GUI 共用的长期挂机服务层
 │   ├── cli_ui.py          # Rich + Questionary 交互式 CLI
-│   └── gui.py             # Material Design 3 风格 NiceGUI 图形界面
-├── tests/                 # 单元测试（matcher / store / watch / concurrency / rules）
-├── config.toml            # 内置详细注释的配置文件（直接修改使用）
+│   └── gui/               # Material Design 3 风格 NiceGUI 图形界面（模块化分包）
+├── scripts/
+│   └── build_release.py   # 离线零配置发行包构建脚本（内嵌独立 Python 3.12）
+├── tests/                 # 单元测试（matcher / store / watch / concurrency / rules / config）
+├── config.example.toml    # 内置详细注释的配置模板（首次启动自动生成 config.toml）
 ├── pyproject.toml         # 项目打包与脚本入口定义
 ├── requirements.txt       # 依赖列表
 ├── run-cli.bat            # Windows 交互式 CLI 一键启动脚本（自动建环境）

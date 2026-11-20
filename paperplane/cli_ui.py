@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .config import MEDIA_TYPES, ConfigError, load_config, load_raw_config, save_raw_config
+from .config import MEDIA_TYPES, ConfigError, ensure_config_file, load_config, load_raw_config, save_raw_config
 from .core import _human
 from .service import LongRunningRunner, fetch_dialogs, preview_matches
 from .store import Store
@@ -24,7 +24,7 @@ def _require_cli_deps():
         from rich.table import Table
     except ImportError as e:
         raise SystemExit(
-            f"缺少交互式 CLI 依赖（{e.name}），请运行：pip install rich questionary tomli-w"
+            f"缺少交互式 CLI 依赖（{e.name}），请运行：pip install rich questionary tomlkit"
         ) from e
     return questionary, Console, Panel, Table, Progress, BarColumn, DownloadColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 
@@ -33,7 +33,7 @@ def run_init_wizard(config_path: str | Path) -> bool:
     """交互式配置向导，安全写入合法的 config.toml。"""
     questionary, Console, Panel, *_ = _require_cli_deps()
     console = Console()
-    path = Path(config_path)
+    path = ensure_config_file(config_path)
 
     try:
         raw = load_raw_config(path) if path.exists() else {}

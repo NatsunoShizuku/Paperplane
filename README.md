@@ -8,7 +8,22 @@ A cross-platform (Windows / macOS) **Telegram channel keyword media downloader**
 
 ## Step-by-Step Guide
 
-### Option A: One-Click GUI Launcher (Recommended, Zero CLI Needed)
+### Option 0: Download Zero-Config Offline Release Bundle (Easiest, No Python Required)
+
+1. Download the archive for your platform from **GitHub Releases**:
+   - **Windows (x64)**: `Paperplane-*-windows-x64.zip`
+   - **macOS (Apple Silicon M1–M4)**: `Paperplane-*-macos-arm64.tar.gz`
+   - **macOS (Intel)**: `Paperplane-*-macos-x64.tar.gz`
+2. Extract and **double-click to launch** (bundles a standalone Python 3.12 runtime and all dependencies pre-installed):
+   - **Windows**: double-click `run-gui.bat` (or `run-cli.bat`)
+   - **macOS**: double-click `run-gui.command` (or `run-cli.command`). If macOS Gatekeeper blocks the first launch, run `xattr -dr com.apple.quarantine .` inside the extracted folder once.
+3. Configure your API credentials, sign in, pick channels, and start watching right in the GUI.
+
+> To build an offline bundle locally for your current platform, run `python3 scripts/build_release.py --run-tests` (outputs to `dist/` without modifying `main`).
+
+---
+
+### Option A: One-Click GUI Launcher from Source (Zero CLI Needed)
 
 1. **Install Python 3.11+** (Python 3.12 recommended); on Windows, check *Add Python to PATH*.
 2. **Obtain Telegram API credentials**: visit [my.telegram.org](https://my.telegram.org) → *API development tools* and note your `api_id` and `api_hash`.
@@ -103,9 +118,12 @@ A cross-platform (Windows / macOS) **Telegram channel keyword media downloader**
 
 ---
 
-## Configuration ([`config.toml`](config.toml))
+## Configuration ([`config.example.toml`](config.example.toml))
 
-The repository includes a fully commented [`config.toml`](config.toml) ready to edit directly. Providing `TG_API_ID` and `TG_API_HASH` via environment variables is recommended; if you place real credentials into `config.toml`, run `git update-index --skip-worktree config.toml` before committing so your secrets are never pushed.
+The repository ships a fully commented template at [`config.example.toml`](config.example.toml). On first launch, Paperplane automatically copies it to `config.toml` (both `config.toml` and `config.local.toml` are in `.gitignore`, preventing accidental credential leaks).
+- Supports `[channel_defaults]` inheritance and per-channel `enabled = true/false` toggles.
+- Supports a sibling `config.local.toml` overlay as well as `TG_API_ID` / `TG_API_HASH` environment variables.
+- Saving from the GUI or CLI wizard uses `tomlkit` in-place updates so all comments and formatting are preserved.
 
 ---
 
@@ -135,9 +153,11 @@ Paperplane/
 │   ├── core.py            # Scanning/searching, worker-queue downloads & resume
 │   ├── service.py         # Shared long-running service layer for CLI & GUI
 │   ├── cli_ui.py          # Rich + Questionary interactive CLI
-│   └── gui.py             # Material Design 3 NiceGUI web interface
-├── tests/                 # Unit tests (matcher / store / watch / concurrency / rules)
-├── config.toml            # Detailed commented configuration file (edit directly)
+│   └── gui/               # Material Design 3 NiceGUI web interface (modular package)
+├── scripts/
+│   └── build_release.py   # Zero-config offline release bundle builder (standalone Python 3.12)
+├── tests/                 # Unit tests (matcher / store / watch / concurrency / rules / config)
+├── config.example.toml    # Detailed commented config template (auto-copied to config.toml)
 ├── pyproject.toml         # Package metadata & console scripts
 ├── requirements.txt       # Dependencies
 ├── run-cli.bat            # Windows launcher for interactive CLI (auto-bootstraps venv)

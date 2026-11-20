@@ -1,0 +1,118 @@
+name: Release Offline Bundles
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version label (e.g. v0.2.0; leave empty to use pyproject.toml)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x64
+            os: windows-latest
+          - target: macos-arm64
+            os: macos-latest
+          - target: macos-x64
+            os: macos-15-intel
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python (for build orchestrator)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine release version
+        id: ver
+        shell: python
+        run: |
+          import os, tomllib
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+          ref_type = os.environ.get("GITHUB_REF_TYPE", "")
+          inp = "${{ inputs.version }}".strip()
+          if ref_type == "tag" and ref_name:
+              version = ref_name
+          elif inp:
+              version = inp if inp.startswith("v") else f"v{inp}"
+          else:
+              with open("pyproject.toml", "rb") as f:
+                  v = tomllib.load(f)["project"]["version"]
+              version = v if v.startswith("v") else f"v{v}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"version={version}\n")
+          print("Version:", version)
+
+      - name: Build & verify offline bundle
+        run: >-
+          python scripts/build_release.py
+          --target ${{ matrix.target }}
+          --version ${{ steps.ver.outputs.version }}
+          --run-tests
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: paperplane-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate combined SHA256SUMS.txt
+        working-directory: release-assets
+        run: |
+          cat *.sha256 | sort -k2 > SHA256SUMS.txt
+          rm -f *.sha256
+          ls -lh
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            ## 离线零配置版本（推荐） / Zero-Config Offline Bundles
+
+            内置独立 Python 3.12 运行时与全部依赖，**无需安装 Python，无需联网装包**，解压后双击即可使用：
+            Includes a standalone Python 3.12 runtime and all dependencies pre-installed — **no Python installation or pip setup required**:
+
+            - **Windows (x64)**: 下载 `Paperplane-*-windows-x64.zip` → 解压 → 双击 `run-gui.bat`（或 `run-cli.bat`）
+            - **macOS (Apple Silicon M1/M2/M3/M4)**: 下载 `Paperplane-*-macos-arm64.tar.gz` → 解压 → 双击 `run-gui.command`（或 `run-cli.command`）
+            - **macOS (Intel)**: 下载 `Paperplane-*-macos-x64.tar.gz` → 解压 → 双击 `run-gui.command`（或 `run-cli.command`）
+
+            > **macOS 首次运行提示**：如果系统 Gatekeeper 提示“无法验证开发者”，请在解压后的目录打开终端执行一次：
+            > ```bash
+            > xattr -dr com.apple.quarantine .
+            > ```
+            > 然后双击 `run-gui.command` 即可。
+          files: |
+            release-assets/*.zip
+            release-assets/*.tar.gz
+            release-assets/SHA256SUMS.txt

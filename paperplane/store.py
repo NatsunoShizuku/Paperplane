@@ -1,6 +1,7 @@
-"""SQLite 状态：消息缓存、扫描进度、下载记录。
+"""SQLite 状态：消息缓存、扫描进度（full / search 分离）、下载记录。
 
 消息文本缓存在本地，换关键词重新匹配时不需要再请求 Telegram。
+默认启用 WAL 模式以支持 GUI 预览与后台挂机并发读写。
 """
 from __future__ import annotations
 
@@ -25,7 +26,14 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE TABLE IF NOT EXISTS scan_state (
     chat_id  INTEGER PRIMARY KEY,
     last_id  INTEGER NOT NULL DEFAULT 0,
-    floor_ts INTEGER                    -- 已缓存的最早时间点；0 = 从频道开头，NULL = 未扫描过
+    floor_ts INTEGER                    -- full 模式已缓存的最早时间点；0 = 从频道开头，NULL = 未全量扫描过
+);
+CREATE TABLE IF NOT EXISTS search_state (
+    chat_id  INTEGER NOT NULL,
+    query    TEXT NOT NULL,
+    last_id  INTEGER NOT NULL DEFAULT 0,
+    floor_ts INTEGER,                   -- 该搜索词已扫描的最早时间点；0 = 不限最早时间
+    PRIMARY KEY (chat_id, query)
 );
 CREATE TABLE IF NOT EXISTS chats (
     chat_key  TEXT PRIMARY KEY,         -- 配置里写的 chat（字符串化）
@@ -59,7 +67,10 @@ class CachedMessage:
 
 class Store:
     def __init__(self, path: Path):
-        self.db = sqlite3.connect(path)
+        self.db = sqlite3.connect(path, timeout=30.0)
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA synchronous=NORMAL")
+        self.db.execute("PRAGMA busy_timeout=5000")
         self.db.executescript(SCHEMA)
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(scan_state)")}
         if "floor_ts" not in cols:     # 旧版数据库升级；旧数据都是从开头扫描的
@@ -77,7 +88,7 @@ class Store:
     def lookup_chat(self, key) -> tuple[int, str] | None:
         return self.db.execute("SELECT chat_id, title FROM chats WHERE chat_key=?", (str(key),)).fetchone()
 
-    # ---- 扫描进度 ----
+    # ---- full 模式连续扫描进度 [floor_ts, last_id] ----
     def last_id(self, chat_id: int) -> int:
         row = self.db.execute("SELECT last_id FROM scan_state WHERE chat_id=?", (chat_id,)).fetchone()
         return row[0] if row else 0
@@ -101,6 +112,43 @@ class Store:
             (chat_id, ts),
         )
         self.db.commit()
+
+    # ---- search 模式按搜索词独立记录进度（不污染 full 模式的 scan_state）----
+    def search_last_id(self, chat_id: int, query: str) -> int:
+        row = self.db.execute(
+            "SELECT last_id FROM search_state WHERE chat_id=? AND query=?",
+            (chat_id, query),
+        ).fetchone()
+        return row[0] if row else 0
+
+    def set_search_last_id(self, chat_id: int, query: str, last_id: int):
+        self.db.execute(
+            "INSERT INTO search_state(chat_id,query,last_id) VALUES(?,?,?) "
+            "ON CONFLICT(chat_id,query) DO UPDATE SET last_id=MAX(last_id, excluded.last_id)",
+            (chat_id, query, last_id),
+        )
+        self.db.commit()
+
+    def search_floor_ts(self, chat_id: int, query: str) -> int | None:
+        row = self.db.execute(
+            "SELECT floor_ts FROM search_state WHERE chat_id=? AND query=?",
+            (chat_id, query),
+        ).fetchone()
+        return row[0] if row else None
+
+    def set_search_floor_ts(self, chat_id: int, query: str, ts: int):
+        self.db.execute(
+            "INSERT INTO search_state(chat_id,query,last_id,floor_ts) VALUES(?,?,0,?) "
+            "ON CONFLICT(chat_id,query) DO UPDATE SET floor_ts=excluded.floor_ts",
+            (chat_id, query, ts),
+        )
+        self.db.commit()
+
+    def max_cached_id(self, chat_id: int) -> int:
+        row = self.db.execute(
+            "SELECT COALESCE(MAX(msg_id), 0) FROM messages WHERE chat_id=?", (chat_id,)
+        ).fetchone()
+        return int(row[0]) if row else 0
 
     # ---- 消息缓存 ----
     def save_messages(self, msgs: list[CachedMessage]):

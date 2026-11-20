@@ -1,6 +1,12 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
+if exist "runtime\python.exe" (
+    set "PYTHONNOUSERSITE=1"
+    "runtime\python.exe" -m paperplane ui %*
+    pause
+    exit /b %errorlevel%
+)
 if not exist ".venv-win\Scripts\python.exe" (
     echo [Paperplane] First run: creating .venv-win and installing dependencies...
     where py >nul 2>nul && (py -3.12 -m venv .venv-win 2>nul || py -m venv .venv-win) || python -m venv .venv-win

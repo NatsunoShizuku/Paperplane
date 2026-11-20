@@ -185,9 +185,12 @@ def filter_channels_by_scope(
     channels: list[ChannelConfig],
     scope: dict[int, set[str] | None] | None,
 ) -> list[ChannelConfig]:
-    """按挂机控制台勾选的频道索引与关键词过滤运行时频道配置（不修改磁盘 config.toml）。"""
+    """按挂机控制台勾选的频道索引与关键词过滤运行时频道配置（不修改磁盘 config.toml）。
+
+    当 scope 为 None 时，仅保留 enabled=True 的频道。
+    """
     if scope is None:
-        return list(channels)
+        return [ch for ch in channels if ch.enabled]
 
     filtered: list[ChannelConfig] = []
     for idx, ch in enumerate(channels):
@@ -221,6 +224,121 @@ def filter_channels_by_scope(
                 if kept:
                     filtered.append(replace(ch, include=kept))
     return filtered
+
+
+async def watch_channels(
+    client,
+    store: Store,
+    jobs: list[ChannelJob],
+    *,
+    debounce: float = 5.0,
+    catchup_interval: float = 0.0,
+    stop_event: asyncio.Event | None = None,
+):
+    """统一的实时监听循环（供 CLI 与 GUI 共用）：防抖下载 + 可选定期补扫防漏。"""
+    loop = asyncio.get_running_loop()
+    by_chat = {j.chat_id: j for j in jobs}
+    start_ids = {j.chat_id: max(store.last_id(j.chat_id), store.max_cached_id(j.chat_id)) for j in jobs}
+    timers: dict[int, asyncio.TimerHandle] = {}
+    workers: dict[int, asyncio.Task] = {}
+    dirty: set[int] = set()
+    fatal_error: BaseException | None = None
+
+    async def run_worker(job: ChannelJob):
+        nonlocal fatal_error
+        try:
+            while True:
+                dirty.discard(job.chat_id)
+                await job.download(job.pending(min_id=start_ids[job.chat_id]))
+                if job.chat_id not in dirty:
+                    break
+        except CHANNEL_FATAL as e:
+            log.error("无法访问频道 %s：%s，停止监听该频道", job.ch.chat, type(e).__name__)
+            by_chat.pop(job.chat_id, None)
+            if not by_chat:
+                await client.disconnect()
+        except (*ACCOUNT_FATAL, AbortRun) as e:
+            if fatal_error is None:
+                fatal_error = e
+            await client.disconnect()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("监听处理频道 %s 时出错", job.ch.chat)
+
+    def trigger(job: ChannelJob):
+        timers.pop(job.chat_id, None)
+        worker = workers.get(job.chat_id)
+        if worker and not worker.done():
+            dirty.add(job.chat_id)
+            return
+        workers[job.chat_id] = asyncio.create_task(run_worker(job))
+
+    @client.on(events.NewMessage(chats=[j.entity for j in jobs]))
+    async def on_message(event):
+        job = by_chat.get(event.chat_id)
+        if not job:
+            return
+        if job.ch.until and event.message.date > job.ch.until:
+            return     # 超出 until：不缓存也不推进进度，以后 until 往后调时再由 scan 补
+        store.save_messages([to_cached(job.chat_id, event.message)])
+        if job.ch.scan_mode == "full":
+            store.set_last_id(job.chat_id, event.message.id)
+        if t := timers.pop(job.chat_id, None):
+            t.cancel()
+        timers[job.chat_id] = loop.call_later(debounce, trigger, job)
+
+    async def catchup_loop():
+        nonlocal fatal_error
+        while stop_event and not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=catchup_interval)
+                return
+            except asyncio.TimeoutError:
+                pass
+            log.info("定期补扫检查开始（防止休眠或断网漏消息）")
+            for job in list(by_chat.values()):
+                if stop_event.is_set():
+                    return
+                try:
+                    if job.ch.scan_mode == "full":
+                        await job.scan(min_id=store.last_id(job.chat_id))
+                    else:
+                        await job.scan(min_id=max(start_ids[job.chat_id], store.max_cached_id(job.chat_id)))
+                    trigger(job)
+                except CHANNEL_FATAL as e:
+                    log.error("定期补扫无法访问频道 %s：%s", job.ch.chat, type(e).__name__)
+                    by_chat.pop(job.chat_id, None)
+                except (*ACCOUNT_FATAL, AbortRun) as e:
+                    if fatal_error is None:
+                        fatal_error = e
+                    await client.disconnect()
+                    return
+                except Exception as e:
+                    log.warning("定期补扫频道 %s 失败：%s", job.ch.chat, e)
+
+    catchup_task = asyncio.create_task(catchup_loop()) if (catchup_interval > 0 and stop_event is not None) else None
+    if catchup_task is not None:
+        log.info("长期挂机已启动：监听 %d 个频道（每 %.0f 分钟自动补扫防漏）", len(jobs), catchup_interval / 60)
+    else:
+        log.info("开始监听 %d 个频道，Ctrl+C 退出", len(jobs))
+    try:
+        await client.run_until_disconnected()
+    finally:
+        if catchup_task and not catchup_task.done():
+            catchup_task.cancel()
+            await asyncio.gather(catchup_task, return_exceptions=True)
+        for t in timers.values():
+            t.cancel()
+        timers.clear()
+        running = [w for w in workers.values() if not w.done()]
+        for w in running:
+            w.cancel()
+        if running:
+            await asyncio.gather(*running, return_exceptions=True)
+
+    if fatal_error is not None:
+        raise fatal_error
 
 
 class _RingLogHandler(logging.Handler):
@@ -420,99 +538,11 @@ class LongRunningRunner:
             self._client = None
 
     async def _watch_with_catchup(self, client, store: Store, jobs: list[ChannelJob]):
-        loop = asyncio.get_running_loop()
-        by_chat = {j.chat_id: j for j in jobs}
-        start_ids = {j.chat_id: store.last_id(j.chat_id) for j in jobs}
-        timers: dict[int, asyncio.TimerHandle] = {}
-        workers: dict[int, asyncio.Task] = {}
-        dirty: set[int] = set()
-        fatal_error: BaseException | None = None
-
-        async def run_worker(job: ChannelJob):
-            nonlocal fatal_error
-            try:
-                while True:
-                    dirty.discard(job.chat_id)
-                    await job.download(job.pending(min_id=start_ids[job.chat_id]))
-                    if job.chat_id not in dirty:
-                        break
-            except CHANNEL_FATAL as e:
-                log.error("无法访问频道 %s：%s，停止监听该频道", job.ch.chat, type(e).__name__)
-                by_chat.pop(job.chat_id, None)
-                if not by_chat:
-                    await client.disconnect()
-            except (*ACCOUNT_FATAL, AbortRun) as e:
-                if fatal_error is None:
-                    fatal_error = e
-                await client.disconnect()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("监听处理频道 %s 时出错", job.ch.chat)
-
-        def trigger(job: ChannelJob):
-            timers.pop(job.chat_id, None)
-            worker = workers.get(job.chat_id)
-            if worker and not worker.done():
-                dirty.add(job.chat_id)
-                return
-            workers[job.chat_id] = asyncio.create_task(run_worker(job))
-
-        @client.on(events.NewMessage(chats=[j.entity for j in jobs]))
-        async def on_message(event):
-            job = by_chat.get(event.chat_id)
-            if not job:
-                return
-            if job.ch.until and event.message.date > job.ch.until:
-                return
-            store.save_messages([to_cached(job.chat_id, event.message)])
-            store.set_last_id(job.chat_id, event.message.id)
-            if t := timers.pop(job.chat_id, None):
-                t.cancel()
-            timers[job.chat_id] = loop.call_later(self.debounce, trigger, job)
-
-        async def catchup_loop():
-            nonlocal fatal_error
-            while self._stop_event and not self._stop_event.is_set():
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=self.catchup_interval)
-                    return
-                except asyncio.TimeoutError:
-                    pass
-                log.info("定期补扫检查开始（防止休眠或断网漏消息）")
-                for job in list(by_chat.values()):
-                    if self._stop_event.is_set():
-                        return
-                    try:
-                        await job.scan(min_id=store.last_id(job.chat_id))
-                        trigger(job)
-                    except CHANNEL_FATAL as e:
-                        log.error("定期补扫无法访问频道 %s：%s", job.ch.chat, type(e).__name__)
-                        by_chat.pop(job.chat_id, None)
-                    except (*ACCOUNT_FATAL, AbortRun) as e:
-                        if fatal_error is None:
-                            fatal_error = e
-                        await client.disconnect()
-                        return
-                    except Exception as e:
-                        log.warning("定期补扫频道 %s 失败：%s", job.ch.chat, e)
-
-        catchup_task = asyncio.create_task(catchup_loop()) if self.catchup_interval > 0 else None
-        log.info("长期挂机已启动：监听 %d 个频道（每 %.0f 分钟自动补扫防漏）", len(jobs), self.catchup_interval / 60)
-        try:
-            await client.run_until_disconnected()
-        finally:
-            if catchup_task and not catchup_task.done():
-                catchup_task.cancel()
-                await asyncio.gather(catchup_task, return_exceptions=True)
-            for t in timers.values():
-                t.cancel()
-            timers.clear()
-            running = [w for w in workers.values() if not w.done()]
-            for w in running:
-                w.cancel()
-            if running:
-                await asyncio.gather(*running, return_exceptions=True)
-
-        if fatal_error is not None:
-            raise fatal_error
+        await watch_channels(
+            client,
+            store,
+            jobs,
+            debounce=self.debounce,
+            catchup_interval=self.catchup_interval,
+            stop_event=self._stop_event,
+        )

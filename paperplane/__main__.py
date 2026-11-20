@@ -18,12 +18,11 @@ import asyncio
 import logging
 from datetime import datetime
 
-from telethon import events
-
-from .client import ACCOUNT_FATAL, CHANNEL_FATAL, AbortRun, Throttle, build_client
-from .config import Config, load_config
-from .core import ChannelJob, to_cached
+from .client import build_client
+from .config import Config, ensure_config_file, load_config
+from .core import ChannelJob
 from .matcher import Matcher
+from .service import LongRunningRunner, watch_channels
 from .store import Store
 
 log = logging.getLogger("paperplane")
@@ -56,7 +55,11 @@ def cmd_match(cfg: Config, store: Store):
         selected = Matcher(ch).select(store.messages(chat_id))
         done = store.finished_ids(chat_id)
         total = sum(m.size or 0 for m in selected)
-        print(f"== {title}：命中 {len(selected)} 个文件，{total / 1024**2:.1f} MB（已完成 {len(done & {m.msg_id for m in selected})}）")
+        status_note = "" if ch.enabled else " [已停用]"
+        print(
+            f"== {title}{status_note}：命中 {len(selected)} 个文件，"
+            f"{total / 1024**2:.1f} MB（已完成 {len(done & {m.msg_id for m in selected})}）"
+        )
         for msg in selected:
             when = datetime.fromtimestamp(msg.date).strftime("%Y-%m-%d")
             flag = "✓" if msg.msg_id in done else " "
@@ -64,102 +67,18 @@ def cmd_match(cfg: Config, store: Store):
             print(f"  {flag} #{msg.msg_id:<7} {when} {msg.media_type:<9} {msg.file_name or '-'}  {preview}")
 
 
-async def run_jobs(cfg: Config, store: Store, *, download: bool, watch: bool = False):
-    client = build_client(cfg, receive_updates=watch)
-    throttle = Throttle(cfg.request_interval, cfg.request_jitter)
-    global_sem = asyncio.Semaphore(max(cfg.concurrency, 1))
-    await client.start()
-    try:
-        jobs: list[ChannelJob] = []
-        for ch in cfg.channels:
-            job = ChannelJob(client, cfg, ch, store, throttle, sem=global_sem)
-            try:
-                await job.resolve()
-                await job.scan()
-                if download:
-                    await job.download(job.pending())
-                jobs.append(job)
-            except CHANNEL_FATAL as e:
-                log.error("无法访问频道 %s：%s，跳过", ch.chat, type(e).__name__)
-
-        if watch and jobs:
-            await watch_loop(client, store, jobs)
-    except AbortRun as e:
-        log.error("停止：%s", e)
-    except ACCOUNT_FATAL as e:
-        log.error("账号或 session 失效（%s），请检查账号状态后重新 login", type(e).__name__)
-    finally:
-        await client.disconnect()
-
-
 async def watch_loop(client, store: Store, jobs: list[ChannelJob], *, debounce: float = 5.0):
-    """监听新消息。相册是多条消息分别到达，所以收到后防抖几秒再统一匹配下载。"""
-    loop = asyncio.get_running_loop()
-    by_chat = {j.chat_id: j for j in jobs}
-    start_ids = {j.chat_id: store.last_id(j.chat_id) for j in jobs}
-    timers: dict[int, asyncio.TimerHandle] = {}
-    workers: dict[int, asyncio.Task] = {}
-    dirty: set[int] = set()
-    fatal_error: BaseException | None = None
+    """兼容旧版调用入口：复用 service.watch_channels。"""
+    await watch_channels(client, store, jobs, debounce=debounce, catchup_interval=0.0)
 
-    async def run_worker(job: ChannelJob):
-        nonlocal fatal_error
-        try:
-            while True:
-                dirty.discard(job.chat_id)
-                await job.download(job.pending(min_id=start_ids[job.chat_id]))
-                if job.chat_id not in dirty:
-                    break
-        except CHANNEL_FATAL as e:
-            log.error("无法访问频道 %s：%s，停止监听该频道", job.ch.chat, type(e).__name__)
-            by_chat.pop(job.chat_id, None)
-            if not by_chat:
-                await client.disconnect()
-        except (*ACCOUNT_FATAL, AbortRun) as e:
-            if fatal_error is None:
-                fatal_error = e
-            await client.disconnect()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("监听处理频道 %s 时出错", job.ch.chat)
 
-    def trigger(job: ChannelJob):
-        timers.pop(job.chat_id, None)
-        worker = workers.get(job.chat_id)
-        if worker and not worker.done():
-            dirty.add(job.chat_id)
-            return
-        workers[job.chat_id] = asyncio.create_task(run_worker(job))
-
-    @client.on(events.NewMessage(chats=[j.entity for j in jobs]))
-    async def on_message(event):
-        job = by_chat.get(event.chat_id)
-        if not job:
-            return
-        if job.ch.until and event.message.date > job.ch.until:
-            return     # 超出 until：不缓存也不推进进度，以后 until 往后调时再由 scan 补
-        store.save_messages([to_cached(job.chat_id, event.message)])
-        store.set_last_id(job.chat_id, event.message.id)
-        if t := timers.pop(job.chat_id, None):
-            t.cancel()
-        timers[job.chat_id] = loop.call_later(debounce, trigger, job)
-
-    log.info("开始监听 %d 个频道，Ctrl+C 退出", len(jobs))
+async def _run_via_runner(config_path: str, mode: str, *, catchup_minutes: float = 30.0):
+    runner = LongRunningRunner(config_path, catchup_interval=catchup_minutes * 60.0)
+    task = runner.start(mode)
     try:
-        await client.run_until_disconnected()
-    finally:
-        for t in timers.values():
-            t.cancel()
-        timers.clear()
-        running = [w for w in workers.values() if not w.done()]
-        for w in running:
-            w.cancel()
-        if running:
-            await asyncio.gather(*running, return_exceptions=True)
-
-    if fatal_error is not None:
-        raise fatal_error
+        await task
+    except asyncio.CancelledError:
+        await runner.stop()
 
 
 def main():
@@ -185,6 +104,8 @@ def main():
     )
     logging.getLogger("telethon").setLevel(logging.INFO if args.verbose else logging.WARNING)
 
+    ensure_config_file(args.config)
+
     if args.command == "ui":
         from .cli_ui import run_interactive_menu
         run_interactive_menu(args.config)
@@ -202,42 +123,27 @@ def main():
         launch_gui(args.config, host=args.host, port=args.port, native=args.native)
         return
 
-    cfg = load_config(args.config)
-    store = Store(cfg.db_path)
     try:
-        if args.command == "login":
-            asyncio.run(cmd_login(cfg))
-        elif args.command == "chats":
-            asyncio.run(cmd_chats(cfg))
-        elif args.command == "match":
-            cmd_match(cfg, store)
-        elif args.command == "watch":
-            store.close()
-            from .service import LongRunningRunner
-
-            async def _watch_forever():
-                runner = LongRunningRunner(args.config, catchup_interval=args.catchup * 60.0)
-                task = runner.start("watch")
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    await runner.stop()
-
-            asyncio.run(_watch_forever())
+        if args.command in ("scan", "download", "watch"):
+            asyncio.run(_run_via_runner(args.config, args.command, catchup_minutes=args.catchup))
             return
-        else:
-            asyncio.run(run_jobs(
-                cfg, store,
-                download=args.command == "download",
-                watch=False,
-            ))
+
+        cfg = load_config(args.config)
+        store = Store(cfg.db_path)
+        try:
+            if args.command == "login":
+                asyncio.run(cmd_login(cfg))
+            elif args.command == "chats":
+                asyncio.run(cmd_chats(cfg))
+            elif args.command == "match":
+                cmd_match(cfg, store)
+        finally:
+            try:
+                store.close()
+            except Exception:
+                pass
     except KeyboardInterrupt:
         log.info("已中断，进度已保存")
-    finally:
-        try:
-            store.close()
-        except Exception:
-            pass
 
 
 def main_gui():
@@ -248,6 +154,7 @@ def main_gui():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--native", action="store_true")
     args = ap.parse_args()
+    ensure_config_file(args.config)
     from .gui import launch_gui
     launch_gui(args.config, host=args.host, port=args.port, native=args.native)
 

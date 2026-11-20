@@ -206,7 +206,7 @@ class ChannelJob:
                 await handle_flood(e, self.cfg)   # 等完后继续
 
     async def _scan_search(self, *, min_id: int = 0):
-        """频道内服务端搜索模式：按关键词直查，再自动补拉相册与前置上下文邻近消息。"""
+        """频道内服务端搜索模式：按关键词独立记录 search_state 游标，不污染 full 模式的 scan_state。"""
         queries = derive_search_queries(self.ch)
         if not queries:
             log.warning("频道 %s 未提取到可用的字面搜索词，自动回退到全量遍历扫描", self.ch.chat)
@@ -214,17 +214,29 @@ class ChannelJob:
             return
 
         since, until = self.ch.since, self.ch.until
+        since_ts = int(since.timestamp()) if since else 0
         log.info("频道内搜索：关键词 %s%s%s", queries,
                  f"，since={since}" if since else "",
                  f"，until={until}" if until else "")
 
         hits: dict[int, CachedMessage] = {}
         for q in queries:
-            kwargs: dict = dict(search=q, wait_time=self.cfg.request_interval)
+            q_last = self.store.search_last_id(self.chat_id, q)
+            q_floor = self.store.search_floor_ts(self.chat_id, q)
             if min_id > 0:
-                kwargs["min_id"] = min_id
+                effective_min_id = min_id
+            elif q_last > 0 and q_floor is not None and since_ts >= q_floor:
+                effective_min_id = q_last
+            else:
+                effective_min_id = 0
+
+            kwargs: dict = dict(search=q, wait_time=self.cfg.request_interval)
+            if effective_min_id > 0:
+                kwargs["min_id"] = effective_min_id
             if until:
                 kwargs["offset_date"] = until + timedelta(seconds=1)
+
+            q_max_id = 0
             async for msg in self.client.iter_messages(self.entity, **kwargs):
                 if until and msg.date > until:
                     continue
@@ -233,9 +245,16 @@ class ChannelJob:
                 if isinstance(msg, MessageService):
                     continue
                 hits[msg.id] = to_cached(self.chat_id, msg)
+                if msg.id > q_max_id:
+                    q_max_id = msg.id
+
+            if q_max_id > 0:
+                self.store.set_search_last_id(self.chat_id, q, q_max_id)
+            if min_id == 0 and (q_floor is None or since_ts < q_floor):
+                self.store.set_search_floor_ts(self.chat_id, q, since_ts)
 
         if hits:
-            self._flush(list(hits.values()))
+            self._flush(list(hits.values()), update_scan_state=False)
 
         # 自动补拉同相册成员与 context_before 后续媒体消息，保证匹配完整性
         neighbor_ids: set[int] = set()
@@ -263,7 +282,7 @@ class ChannelJob:
                 fetched_neighbors.append(to_cached(self.chat_id, msg))
 
         if fetched_neighbors:
-            self._flush(fetched_neighbors)
+            self._flush(fetched_neighbors, update_scan_state=False)
 
         log.info("搜索完成：关键词 %d 个，命中 %d 条，补拉邻近上下文 %d 条",
                  len(queries), len(hits), len(fetched_neighbors))
@@ -324,10 +343,11 @@ class ChannelJob:
         self._flush(batch)
         self.store.set_floor_ts(self.chat_id, since_ts)
 
-    def _flush(self, batch: list[CachedMessage]) -> int:
+    def _flush(self, batch: list[CachedMessage], *, update_scan_state: bool = True) -> int:
         if batch:
             self.store.save_messages(batch)
-            self.store.set_last_id(self.chat_id, max(m.msg_id for m in batch))
+            if update_scan_state:
+                self.store.set_last_id(self.chat_id, max(m.msg_id for m in batch))
         return len(batch)
 
     # ---- 匹配 ----
@@ -414,19 +434,16 @@ class ChannelJob:
             except errors.FloodError as e:
                 await handle_flood(e, self.cfg)
 
-    async def _run_one(self, sem: asyncio.Semaphore, m: CachedMessage, msg: Message | None, stats: dict):
-        async with sem:
-            status = await self._download_one(m, msg)
-            stats[status] += 1
-
     async def _download_one(self, m: CachedMessage, msg: Message | None) -> str:
         if msg is None or msg.media is None:
             self.store.mark(self.chat_id, m.msg_id, "skipped", error="消息已删除或媒体不存在")
             return "skipped"
 
+        dl_root = self.ch.download_dir or self.cfg.download_dir
+        path_tpl = self.ch.path_template if self.ch.path_template is not None else self.cfg.path_template
         folder = render_folder(
-            self.cfg.download_dir,
-            self.cfg.path_template,
+            dl_root,
+            path_tpl,
             include=self.matched_patterns.get(m.msg_id, ""),
             media_type=m.media_type or "other",
             channel=self.title,
@@ -457,7 +474,7 @@ class ChannelJob:
                 self.store.mark(self.chat_id, m.msg_id, "done", str(path))
                 final_size = m.size or path.stat().st_size
                 self._emit(m.msg_id, path.name, final_size, final_size, "done")
-                log.info("✓ %s（%s）", path.relative_to(self.cfg.download_dir), _human(m.size))
+                log.info("✓ %s（%s）", path.relative_to(dl_root), _human(m.size))
                 return "done"
 
             except errors.FileReferenceExpiredError:

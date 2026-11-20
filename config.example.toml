@@ -1,11 +1,10 @@
 # ==============================================================================
-# Paperplane 配置文件（直接修改本文件即可使用）
+# Paperplane 配置文件模板（首次启动自动复制为 config.toml，也可手动复制后修改）
 #
-# 安全提醒：
-#   1. api_id / api_hash 建议优先通过系统环境变量 TG_API_ID / TG_API_HASH 提供；
-#   2. 如果你在本文件里写入了真实 api_id / api_hash，且准备提交代码到 Git，
-#      请先执行：git update-index --skip-worktree config.toml
-#      避免把个人凭证推送到公开仓库！
+# 安全与覆写说明：
+#   1. config.toml 与 config.local.toml 已加入 .gitignore，不会误提交个人凭证；
+#   2. api_id / api_hash 也可通过系统环境变量 TG_API_ID / TG_API_HASH 提供；
+#   3. 如需把敏感凭证或本机差异拆分出去，可创建同级 config.local.toml，启动时会自动覆盖合并。
 #
 # 语法提醒（TOML）：
 #   - 字符串（api_hash、IP 地址、路径、关键词列表项、带单位的大小）必须加引号 "..."
@@ -60,14 +59,30 @@ max_retries = 3               # 单文件下载失败后的最大重试次数
 # secret = "..."         # 仅 type = "mtproxy" 时必填
 
 # ------------------------------------------------------------------------------
-# 5. 监控与下载频道列表（至少配置一个 [[channels]]，可复制多个块监控多个频道）
+# 5. 频道默认配置（可选；[[channels]] 中未填写的字段会自动继承此处的默认值）
+# ------------------------------------------------------------------------------
+[channel_defaults]
+enabled = true
+scan_mode = "full"
+exclude = ["预告", "广告"]
+media = ["video", "document"]
+min_size = "10MB"
+max_size = 0
+context_before = 1
+follow_replies = true
+# path_template = "{channel}/{include}/{media_type}"   # 可选：覆盖全局路径模板
+# download_dir = "downloads"                           # 可选：覆盖全局下载目录
+
+# ------------------------------------------------------------------------------
+# 6. 监控与下载频道列表（至少配置一个 [[channels]]，可复制多个块监控多个频道）
 # ------------------------------------------------------------------------------
 
-# 示例 A：基础单规则频道（使用频道内搜索加速历史查找）
+# 示例 A：基础单规则频道（未写的字段自动继承 [channel_defaults]）
 [[channels]]
 chat = "@some_public_channel"     # 频道 @用户名（加引号）或数字 ID（如 -1001234567890，用 chats 命令查看）
 name = "示例频道"                  # 可选：自定义显示名（也用于 {channel} 路径变量）
-scan_mode = "search"              # 扫描模式："full"（默认全量增量遍历）或 "search"（频道内服务端搜索）
+enabled = true                    # 可选：false 可临时停用该频道而不删除配置
+scan_mode = "search"              # 扫描模式："full"（全量增量遍历）或 "search"（频道内服务端搜索）
 # search_queries = ["#4K"]        # 可选：仅 search 模式生效；留空则自动从 include/rules 提取搜索词
 include = ["#4K", "原盘|REMUX"]    # 包含正则（不区分大小写，任一命中即匹配；留空 [] 表示全部匹配）
 exclude = ["预告", "广告"]         # 排除正则（任一命中即跳过；不需要排除时必须写 []，切勿写 [""]）
