@@ -137,6 +137,8 @@ def parse_requirements(req_file: Path) -> tuple[list[str], list[str]]:
 def clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     env.pop("PYTHONPATH", None)
     env.pop("PYTHONHOME", None)
     if extra:
