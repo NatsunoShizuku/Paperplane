@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paperplane"
+version = "0.2.0"
+description = "Telegram 频道关键词媒体下载工具（支持交互式 CLI 与跨平台 GUI 长期挂机）"
+requires-python = ">=3.11"
+dependencies = [
+    "telethon>=1.40",
+    "python-socks[asyncio]>=2.4",
+]
+
+[project.optional-dependencies]
+fast = ["cryptg>=0.4"]
+cli = ["rich>=13.7", "questionary>=2.0", "tomli-w>=1.0"]
+gui = ["nicegui>=2.0", "tomli-w>=1.0"]
+all = ["cryptg>=0.4", "rich>=13.7", "questionary>=2.0", "tomli-w>=1.0", "nicegui>=2.0"]
+
+[project.scripts]
+paperplane = "paperplane.__main__:main"
+paperplane-gui = "paperplane.__main__:main_gui"
+
+[tool.setuptools.packages.find]
+include = ["paperplane*"]

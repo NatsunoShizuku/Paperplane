@@ -1,0 +1,47 @@
+# 复制为 config.toml 后修改。api_id / api_hash 建议用环境变量 TG_API_ID / TG_API_HASH 提供。
+# 申请地址：https://my.telegram.org → API development tools
+
+[telegram]
+# api_id = 123456
+# api_hash = "..."
+
+[download]
+dir = "downloads"        # 下载目录
+data_dir = "data"        # session 与 SQLite 状态
+concurrency = 3          # 同时下载的文件数，建议 3–5
+path_template = "{include}/{media_type}"   # 可用变量：{include} {media_type} {channel} {date} {month} {year}
+
+[limits]
+request_interval = 1.0        # 两次请求最小间隔（秒）
+request_jitter = 0.5          # 额外随机抖动（秒）
+flood_sleep_threshold = 120   # 低于此值的 FloodWait 自动等待
+max_flood_wait = 3600         # 超过此值直接停止运行
+max_retries = 3
+
+# [proxy]
+# type = "socks5"        # socks5 / http / mtproxy
+# host = "127.0.0.1"
+# port = 7890
+# secret = "..."         # 仅 mtproxy
+
+[[channels]]
+chat = "@some_public_channel"     # 或数字 id（用 `chats` 命令查看）
+include = ["原盘|REMUX", "\\b4K\\b"]   # 正则，任一命中即匹配；留空 = 全部
+exclude = ["预告"]
+media = ["video", "document"]     # photo video gif audio voice video_note document sticker
+# 可选：同一频道按不同 include 分别指定下载的媒体类型（配置 rules 后优先于上面的 include/media）
+# rules = [
+#   { include = ["原盘|REMUX"], media = ["video", "document"] },
+#   { include = ["海报|剧照"], media = ["photo"] },
+# ]
+min_size = "10MB"
+max_size = 0                      # 0 = 不限
+context_before = 1                # 媒体前 1 条纯文字消息也参与匹配
+follow_replies = true
+# scan_mode = "search"            # full（默认全量遍历）或 search（频道内服务端搜索 + 自动补拉相册/上下文）
+# search_queries = ["#SAmart"]    # 可选：search 模式手动指定搜索词；留空则自动从 include/rules 提取
+# 日期范围（可选，两端都包含）。只写日期时：since 从当天 0 点算，until 到当天 23:59:59。
+# 不带时区按本机时区；也可以写 2024-01-01T18:00:00+08:00。
+# since = 2024-01-01
+# until = 2024-06-30
+# name = "自定义目录名"

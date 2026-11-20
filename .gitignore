@@ -1,0 +1,52 @@
+# === 敏感凭证、环境变量与 Telegram Session / Token 缓存 ===
+.env
+.env.*
+config.toml
+*.session
+*.session-journal
+*.session-wal
+*.session-shm
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+
+# === 运行时数据与下载文件 ===
+data/
+downloads/
+*.log
+
+# === Python 虚拟环境与依赖/编译缓存 ===
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+pip-wheel-metadata/
+
+# === 测试与代码检查缓存 ===
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# === 操作系统与 IDE ===
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
